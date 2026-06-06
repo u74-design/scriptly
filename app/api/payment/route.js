@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { razorpay } from "@/lib/razorpay";
+import { getRazorpay } from "@/lib/razorpay";
 import { auth } from "@clerk/nextjs/server";
 
 export async function POST() {
@@ -13,7 +13,7 @@ export async function POST() {
       );
     }
 
-    const order = await razorpay.orders.create({
+    const order = await getRazorpay().orders.create({
       amount: 19900, // ₹199
       currency: "INR",
       receipt: `scriptly_${Date.now()}`,
