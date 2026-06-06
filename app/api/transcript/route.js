@@ -37,7 +37,9 @@ async function handleStreamRequest(videoUrl, lang, controller, encoder) {
 
     send({ type: "status", message: "Fetching transcript…", progress: 0 });
 
-    const { segments: rawSegments } = await fetchRawTranscriptSegments(videoId, { lang });
+    console.log("[transcript] API request:", { videoId, lang: lang || "auto", videoUrl });
+    const { segments: rawSegments, source } = await fetchRawTranscriptSegments(videoId, { lang });
+    console.log("[transcript] API success:", { videoId, source, segments: rawSegments?.length ?? 0 });
 
     if (!rawSegments?.length) {
       send({ type: "error", message: TRANSCRIPT_UNAVAILABLE_ERROR });
@@ -102,7 +104,8 @@ async function handleStreamRequest(videoUrl, lang, controller, encoder) {
       sourceLang,
     });
   } catch (err) {
-    console.error("[transcript] ERROR:", err);
+    console.error("[transcript] API FULL ERROR:", err);
+    console.error("[transcript] API MESSAGE:", err?.message);
     const msg = err?.message ?? "";
     const error = msg.includes("disabled") || msg.includes("not available")
       ? TRANSCRIPT_UNAVAILABLE_ERROR

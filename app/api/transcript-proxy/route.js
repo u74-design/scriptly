@@ -17,7 +17,13 @@ export async function POST(req) {
       return NextResponse.json({ error: "Invalid YouTube URL or video ID." }, { status: 400 });
     }
 
-    const { segments: rawSegments } = await fetchRawTranscriptSegmentsProxy(videoId, { lang });
+    console.log("[transcript-proxy] API request:", { videoId, lang, videoUrl });
+    const { segments: rawSegments, source } = await fetchRawTranscriptSegmentsProxy(videoId, { lang });
+    console.log("[transcript-proxy] API success:", {
+      videoId,
+      source,
+      segments: rawSegments?.length ?? 0,
+    });
     const segments = buildSegments(rawSegments);
     const fullTranscript = segments.map((seg) => seg.text).join(" ");
 
@@ -35,7 +41,8 @@ export async function POST(req) {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("[transcript-proxy]", err);
+    console.error("[transcript-proxy] API FULL ERROR:", err);
+    console.error("[transcript-proxy] API MESSAGE:", err?.message);
     return NextResponse.json(
       { error: err?.message || TRANSCRIPT_UNAVAILABLE_ERROR },
       { status: 404 }
