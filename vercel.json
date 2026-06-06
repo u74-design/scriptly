@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "app/api/transcript/route.js": {
+      "maxDuration": 30
+    },
+    "app/api/transcript-proxy/route.js": {
+      "maxDuration": 30
+    }
+  }
+}

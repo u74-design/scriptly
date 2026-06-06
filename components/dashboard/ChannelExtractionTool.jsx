@@ -8,6 +8,10 @@ import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import EnhancedTranscriptModal from "@/components/transcript/EnhancedTranscriptModal";
 import {
+  fetchTranscriptWithFallback,
+  formatTranscriptError,
+} from "@/lib/transcript-client";
+import {
   AlertCircle,
   Bookmark,
   CalendarDays,
@@ -207,12 +211,11 @@ export default function ChannelExtractionTool() {
     try {
       let transcriptText = transcript;
       if (!activeVideo || activeVideo.videoId !== video.videoId || !transcriptText) {
-        const res = await fetch("/api/transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoUrl: video.videoUrl }),
+        const data = await fetchTranscriptWithFallback({
+          videoUrl: video.videoUrl,
+          usePost: true,
         });
-        transcriptText = await parseTranscriptStream(res);
+        transcriptText = data.fullTranscript;
       }
 
       await saveTranscriptRecord({
@@ -229,71 +232,24 @@ export default function ChannelExtractionTool() {
       }
       alert("Video saved successfully!");
     } catch (err) {
-      alert("Error saving video: " + err.message);
+      alert("Error saving video: " + formatTranscriptError(err.message));
       console.error(err);
     } finally {
       setFetchingTranscript(false);
     }
   };
 
-  const parseTranscriptStream = async (response) => {
-    if (!response.body) {
-      throw new Error("No response stream");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalData = null;
-    let serverError = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-
-      for (const event of events) {
-        if (!event.startsWith("data:")) continue;
-        const jsonStr = event.replace(/^data:\s*/, "").trim();
-
-        try {
-          const parsed = JSON.parse(jsonStr);
-          if (parsed.type === "error") serverError = parsed.message;
-          if (parsed.type === "done") finalData = parsed;
-        } catch (parseError) {
-          console.error("Bad SSE JSON:", parseError, jsonStr);
-        }
-      }
-    }
-
-    if (serverError) {
-      throw new Error(serverError);
-    }
-
-    if (!finalData?.fullTranscript) {
-      throw new Error("No transcript returned.");
-    }
-
-    return finalData.fullTranscript;
-  };
-
   const fetchTranscriptForVideo = async (video) => {
     try {
       setFetchingTranscript(true);
-      const res = await fetch("/api/transcript", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoUrl: video.videoUrl }),
+      const data = await fetchTranscriptWithFallback({
+        videoUrl: video.videoUrl,
+        usePost: true,
       });
-
-      const fullTranscript = await parseTranscriptStream(res);
-      setTranscript(fullTranscript);
+      setTranscript(data.fullTranscript);
       setActiveVideo(video);
     } catch (err) {
-      alert("Failed to fetch transcript: " + err.message);
+      alert("Failed to fetch transcript: " + formatTranscriptError(err.message));
     } finally {
       setFetchingTranscript(false);
     }
@@ -316,13 +272,11 @@ export default function ChannelExtractionTool() {
 
     for (const video of selectedVideos) {
       try {
-        const res = await fetch("/api/transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoUrl: video.videoUrl }),
+        const data = await fetchTranscriptWithFallback({
+          videoUrl: video.videoUrl,
+          usePost: true,
         });
-
-        const transcriptText = await parseTranscriptStream(res);
+        const transcriptText = data.fullTranscript;
         await fetch("/api/transcripts/save", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

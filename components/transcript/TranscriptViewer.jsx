@@ -8,6 +8,10 @@ import {
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import AuthPromptModal from "@/components/models/AuthPromptModal";
+import {
+  fetchTranscriptWithFallback,
+  formatTranscriptError,
+} from "@/lib/transcript-client";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -195,63 +199,49 @@ const TranscriptViewer = ({
     setFullTranscript("");
     setTranslatedByAI(false);
 
-    const langParam = lang !== "auto" ? `&lang=${lang}` : "";
-    const url = `/api/transcript?videoUrl=${encodeURIComponent(videoUrl)}${langParam}`;
+    let cancelled = false;
 
-    // Use EventSource to read SSE stream
-    const es = new EventSource(url);
+    fetchTranscriptWithFallback({
+      videoUrl,
+      lang,
+      onStatus: (data) => {
+        if (cancelled) return;
+        setProgressMsg(data.message);
+        setProgress(data.progress ?? 0);
+      },
+      onProgress: (data) => {
+        if (cancelled) return;
+        setProgressMsg(data.message);
+        setProgress(data.progress ?? 0);
+      },
+    })
+      .then((data) => {
+        if (cancelled) return;
 
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
+        const result = {
+          segments: data.segments ?? [],
+          fullTranscript: data.fullTranscript ?? "",
+          translatedByAI: data.translatedByAI ?? false,
+        };
 
-        if (data.type === "status") {
-          setProgressMsg(data.message);
-          setProgress(data.progress ?? 0);
-        }
+        cache.current[lang] = result;
+        setSegments(result.segments);
+        setFullTranscript(result.fullTranscript);
+        setTranslatedByAI(result.translatedByAI);
+        setProgress(100);
+        setLoading(false);
+        setIsTranslating(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(formatTranscriptError(err?.message));
+        setLoading(false);
+        setIsTranslating(false);
+      });
 
-        if (data.type === "progress") {
-          setProgressMsg(data.message);
-          setProgress(data.progress ?? 0);
-        }
-
-        if (data.type === "done") {
-          const result = {
-            segments:       data.segments ?? [],
-            fullTranscript: data.fullTranscript ?? "",
-            translatedByAI: data.translatedByAI ?? false,
-          };
-          // Save to cache
-          cache.current[lang] = result;
-
-          setSegments(result.segments);
-          setFullTranscript(result.fullTranscript);
-          setTranslatedByAI(result.translatedByAI);
-          setProgress(100);
-          setLoading(false);
-          setIsTranslating(false);
-          es.close();
-        }
-
-        if (data.type === "error") {
-          setError(data.message);
-          setLoading(false);
-          setIsTranslating(false);
-          es.close();
-        }
-      } catch (err) {
-        console.error("SSE parse error:", err);
-      }
+    return () => {
+      cancelled = true;
     };
-
-    es.onerror = () => {
-      setError("Connection lost. Please try again.");
-      setLoading(false);
-      setIsTranslating(false);
-      es.close();
-    };
-
-    return () => es.close();
   }, [videoUrl, lang]);
 
   const chunks = useMemo(() => groupInto25s(segments), [segments]);

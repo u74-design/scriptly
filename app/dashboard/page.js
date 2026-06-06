@@ -12,6 +12,10 @@ import EmptyState from "@/components/transcript/EmptyState";
 import LoadingState from "@/components/transcript/LoadingState";
 import VideoCard from "@/components/transcript/VideoCard";
 import AIStudyPanel from "@/components/transcript/AIStudyPanel";
+import {
+  fetchTranscriptWithFallback,
+  formatTranscriptError,
+} from "@/lib/transcript-client";
 const DASHBOARD_STATE_KEY = "scriptly.dashboard.workspace";
 
 function DashboardContent({ sidebarOpen, setSidebarOpen, sidebarExpanded,  setSidebarExpanded, }) {
@@ -40,74 +44,10 @@ function DashboardContent({ sidebarOpen, setSidebarOpen, sidebarExpanded,  setSi
       setSidebarOpen(true);
       setSidebarExpanded(false);
 
-      const response = await fetch("/api/transcript", {
-        method: "POST",
-        headers: {  
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          videoUrl: inputUrl,
-        }),
+      const finalData = await fetchTranscriptWithFallback({
+        videoUrl: inputUrl,
+        usePost: true,
       });
-
-      if (!response.body) {
-        throw new Error("No response stream");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      let buffer = "";
-      let finalData = null;
-      let serverError = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        buffer += decoder.decode(value, {
-          stream: true,
-        });
-
-        const events = buffer.split("\n\n");
-
-        buffer = events.pop() || "";
-
-        for (const event of events) {
-          if (!event.startsWith("data:")) continue;
-
-          const jsonStr = event.replace(/^data:\s*/, "").trim();
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-
-            console.log("SSE:", parsed);
-
-            if (parsed.type === "error") {
-              serverError = parsed.message;
-            }
-
-            if (parsed.type === "done") {
-              finalData = parsed;
-            }
-          } catch {
-            console.error("Bad SSE JSON:", jsonStr);
-          }
-        }
-      }
-
-      if (serverError) {
-        throw new Error(serverError);
-      }
-
-      if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
-      }
-
-      if (!finalData?.fullTranscript) {
-        throw new Error("No transcript returned.");
-      }
 
       setTranscript(finalData.fullTranscript);
       setSegments(finalData.segments ?? []);
@@ -121,7 +61,7 @@ function DashboardContent({ sidebarOpen, setSidebarOpen, sidebarExpanded,  setSi
       setGenerated(true);
     } catch (err) {
       console.error("[handleGenerate]", err.message);
-      setError(err.message);
+      setError(formatTranscriptError(err.message));
     } finally {
       setLoading(false);
     }
